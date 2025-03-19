@@ -1,12 +1,9 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional,  Any
 import os
 import uvicorn
-import json
 from src.Image_db import ImageDatabase
-
-
 
 # Define Pydantic models for request validation
 class Image(BaseModel):
@@ -43,8 +40,6 @@ class SearchResult(BaseModel):
     class Config:
         populate_by_name = True  # Allow accessing the field by both names
         allow_population_by_field_name = True
-
-
 
 class SearchResponse(BaseModel):
     results: List[SearchResult]

@@ -6,6 +6,10 @@ __pycache__/
 # C extensions
 *.so
 
+# chromadb
+chroma_db/
+
+
 # Distribution / packaging
 .Python
 build/
