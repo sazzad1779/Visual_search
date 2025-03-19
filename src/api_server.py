@@ -1,9 +1,16 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form,BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware  # Add this import
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import os
 import uvicorn
 from src.Image_db import ImageDatabase
+import base64
+import io
+# from PIL import Image
+import time
+
 
 # Define Pydantic models for request validation
 class Image(BaseModel):
@@ -72,8 +79,7 @@ class BatchInsertResponse(BaseModel):
 
 class ImageUpdate(BaseModel):
     images: List[Image]
-
-
+    
 class SearchResult(BaseModel):
     product_id: str = Field(alias="_id")
     image_id: str
@@ -89,9 +95,16 @@ class SearchResponse(BaseModel):
     results: List[SearchResult]
     query_time_ms: float
 
-
 # Create FastAPI app
 app = FastAPI(title="Visual Search API", version="1.0.0")
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 # Initialize image database
 # You can configure the model via environment variables
@@ -101,7 +114,6 @@ CHROMA_DIR = os.environ.get("CHROMA_DIR", "./chroma_db")
 # Initialize the database with ChromaDB
 image_db = ImageDatabase(model_name=MODEL_NAME, persist_directory=CHROMA_DIR)
 print(f"Initialized ChromaDB with model {MODEL_NAME} at {CHROMA_DIR}")
-
 
 # ✅ API to update product information
 @app.post("/api/update-product")
@@ -189,7 +201,59 @@ async def update_images(product_id: str, data: ImageUpdate):
         raise HTTPException(status_code=500, detail=f"Failed to update images: {str(e)}")
 
 
-# ✅ API to search by image URL
+# 1. Search with Base64 image data (fastest for real-time)
+@app.post("/api/search/base64")
+async def search_by_base64_image(base64_image: str = Form(...), limit: int = Form(10)):
+    """Search for similar products using base64 encoded image data"""
+    try:
+        start_time = time.time()
+        
+        # Decode base64 image
+        try:
+            # Remove the data URL prefix if present
+            if "base64," in base64_image:
+                base64_image = base64_image.split("base64,")[1]
+                
+            image_data = base64.b64decode(base64_image)
+            
+            # Query using the image bytes
+            results = image_db.query_image_from_bytes(image_data, k=limit)
+            
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid image data: {str(e)}")
+        
+        query_time_ms = (time.time() - start_time) * 1000
+        
+        if not results:
+            return {"results": [], "query_time_ms": query_time_ms}
+        
+        return {"results": results, "query_time_ms": query_time_ms}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+
+# 2. Search with direct file upload
+@app.post("/api/search/upload")
+async def search_by_uploaded_image(file: UploadFile = File(...), limit: int = Form(10)):
+    """Search for similar products using uploaded image file"""
+    try:
+        start_time = time.time()
+        
+        # Read file content
+        image_data = await file.read()
+        
+        # Query using the bytes directly
+        results = image_db.query_image_from_bytes(image_data, k=limit)
+        
+        query_time_ms = (time.time() - start_time) * 1000
+        
+        if not results:
+            return {"results": [], "query_time_ms": query_time_ms}
+        
+        return {"results": results, "query_time_ms": query_time_ms}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+    
 @app.get("/api/search")
 async def search_by_image(image_url: str, limit: int = 10):
     """Search for similar products by image URL"""
@@ -209,6 +273,8 @@ async def search_by_image(image_url: str, limit: int = 10):
         return {"results": results, "query_time_ms": query_time_ms}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+
 
 # API to get product information
 @app.get("/api/product/{product_id}")

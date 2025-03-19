@@ -65,6 +65,14 @@ class BaseFeatureExtractor(ABC):
         except Exception as e:
             print(f"Error extracting features: {e}")
             return None
+    def extract_from_bytes(self, image_bytes):
+        """Extract features from raw image bytes"""
+        try:
+            image = Image.open(BytesIO(image_bytes)).convert('RGB')
+            return self.extract_from_image(image)
+        except Exception as e:
+            print(f"Error processing image bytes: {e}")
+            return None
 
 
 class ResNet50Extractor(BaseFeatureExtractor):

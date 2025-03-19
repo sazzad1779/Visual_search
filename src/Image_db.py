@@ -161,82 +161,61 @@ class ImageDatabase:
         return (num_added > 0, num_added, failed_images)
 
 
-    # def update_product(self, product_id: str, images: List[Dict[str, str]], 
-    #                   category_id: str = None, subcategory_id: str = None):
-    #     """
-    #     Update product images in the vector database
+    def query_image_from_bytes(self, image_bytes, k=10):
+        """
+        Query the database with image bytes to find similar products
         
-    #     This handles adding new images without duplicating existing ones
+        Args:
+            image_bytes: Raw binary image data
+            k: Number of results to return
         
-    #     Args:
-    #         product_id: Unique identifier for the product
-    #         images: List of image dictionaries with 'url' and '_id' keys
-    #         category_id: Category identifier (optional)
-    #         subcategory_id: Subcategory identifier (optional)
+        Returns:
+            List of similar products with metadata and similarity scores
+        """
+        # Extract features from the image bytes
+        features = self.feature_extractor.extract_from_bytes(image_bytes)
+        if features is None:
+            return []
         
-    #     Returns:
-    #         Tuple of (success: bool, num_added: int, failed_images: List[str])
-    #     """
-    #     # Track metrics
-    #     num_added = 0
-    #     failed_images = []
+        # Query ChromaDB
+        query_results = self.collection.query(
+            query_embeddings=[features.tolist()],
+            n_results=k
+        )
         
-    #     # Get existing image IDs for this product
-    #     existing_image_ids = set(self.product_map.get(product_id, []))
+        # Organize results
+        results = []
+        seen_product_ids = set()  # For deduplication
         
-    #     # Process each image
-    #     for image in images:
-    #         # Handle both dict and Pydantic model cases
-    #         if hasattr(image, 'url') and hasattr(image, 'image_id'):
-    #             # It's a Pydantic model
-    #             image_url = image.url
-    #             image_id = image.image_id
-    #         elif isinstance(image, dict):
-    #             # It's a dictionary
-    #             image_url = image.get('url')
-    #             image_id = image.get('image_id')
-    #         else:
-    #             print(f"Unrecognized image object type: {type(image)}")
-    #             continue
+        if not query_results or 'ids' not in query_results or not query_results['ids']:
+            return []
+        
+        for i, item_id in enumerate(query_results['ids'][0]):
+            metadata = query_results['metadatas'][0][i]
+            distance = query_results['distances'][0][i] if 'distances' in query_results else 0.0
             
-    #         # Skip if image already exists
-    #         if image_id in existing_image_ids:
-    #             continue
+            product_id = metadata.get('product_id')
             
-    #         # Extract features
-    #         features = self.feature_extractor.extract_from_url(image_url)
-    #         if features is None:
-    #             failed_images.append(image_id)
-    #             continue
+            # Skip if we already added this product (deduplication)
+            if product_id in seen_product_ids:
+                continue
             
-    #         # Prepare metadata
-    #         metadata = {
-    #             'product_id': product_id,
-    #             'image_id': image_id,
-    #             'category_id': category_id if category_id else '',
-    #             'subcategory_id': subcategory_id if subcategory_id else '',
-    #             'image_url': image_url
-    #         }
-    #         # Add to ChromaDB
-    #         try:
-    #             self.collection.upsert(
-    #                 ids=[image_id],
-    #                 embeddings=[features.tolist()],
-    #                 metadatas=[metadata]
-    #             )
-                
-    #             # Update mappings
-    #             if product_id not in self.product_map:
-    #                 self.product_map[product_id] = []
-    #             self.product_map[product_id].append(image_id)
-                
-    #             num_added += 1
-    #         except Exception as e:
-    #             print(f"Error adding image {image_id} to ChromaDB: {e}")
-    #             failed_images.append(image_id)
+            seen_product_ids.add(product_id)
+            
+            # Calculate similarity score from distance (inverted)
+            similarity = 1.0 / (1.0 + distance)
+            
+            results.append({
+                'product_id': product_id,
+                'image_id': metadata.get('image_id'),
+                'category_id': metadata.get('category_id'),
+                'subcategory_id': metadata.get('subcategory_id'),
+                'similarity': float(similarity),
+                'distance': float(distance)
+            })
         
-    #     return (num_added > 0, num_added, failed_images)
-    
+        return results
+
     def update_product(self, product_id: str, images: List[Any], 
                   category_id: str = None, subcategory_id: str = None):
         """

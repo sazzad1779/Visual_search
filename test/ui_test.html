@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visual Search API Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .panel {
+            flex: 1;
+            min-width: 300px;
+            background-color: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .preview {
+            width: 100%;
+            height: 300px;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+        .preview img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        .preview.dragover {
+            border-color: #4CAF50;
+            background-color: rgba(76, 175, 80, 0.1);
+        }
+        .btn {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        .btn:hover {
+            background-color: #45a049;
+        }
+        .btn:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .file-upload {
+            display: inline-block;
+            padding: 10px 15px;
+            background-color: #2196F3;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 15px;
+        }
+        .file-upload:hover {
+            background-color: #0b7dda;
+        }
+        .results {
+            margin-top: 20px;
+        }
+        .results h3 {
+            margin-bottom: 10px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        .result-item {
+            display: flex;
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+        }
+        .result-item img {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            margin-right: 15px;
+            border-radius: 4px;
+        }
+        .result-info {
+            flex: 1;
+        }
+        .result-info p {
+            margin: 3px 0;
+        }
+        .result-info .score {
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #4CAF50;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .error {
+            color: #f44336;
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #ffebee;
+            border-radius: 4px;
+            display: none;
+        }
+        .camera-container {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        #cameraFeed {
+            max-width: 100%;
+            height: 300px;
+            object-fit: contain;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            background-color: #333;
+        }
+        .tab {
+            overflow: hidden;
+            border: 1px solid #ccc;
+            background-color: #f1f1f1;
+            border-radius: 8px 8px 0 0;
+        }
+        .tab button {
+            background-color: inherit;
+            float: left;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            padding: 14px 16px;
+            transition: 0.3s;
+            font-size: 16px;
+        }
+        .tab button:hover {
+            background-color: #ddd;
+        }
+        .tab button.active {
+            background-color: white;
+            border-bottom: 2px solid #4CAF50;
+        }
+        .tabcontent {
+            display: none;
+            padding: 20px;
+            border-top: none;
+            background-color: white;
+            border-radius: 0 0 8px 8px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Visual Search API Test</h1>
+    
+    <div class="container">
+        <div class="panel">
+            <div class="tab">
+                <button class="tablinks active" onclick="openTab(event, 'uploadTab')">Upload</button>
+                <button class="tablinks" onclick="openTab(event, 'cameraTab')">Camera</button>
+                <button class="tablinks" onclick="openTab(event, 'urlTab')">URL</button>
+            </div>
+            
+            <!-- Upload Tab -->
+            <div id="uploadTab" class="tabcontent" style="display: block;">
+                <div class="preview" id="imagePreview">
+                    <span>Drag & drop an image here or select one below</span>
+                </div>
+                
+                <div class="form-group">
+                    <label for="fileInput" class="file-upload">
+                        Choose Image
+                    </label>
+                    <input type="file" id="fileInput" accept="image/*" onchange="handleFileSelect(event)">
+                </div>
+                
+                <div class="form-group">
+                    <label for="limitInput">Number of results:</label>
+                    <input type="number" id="limitInput" value="10" min="1" max="50">
+                </div>
+                
+                <div class="form-group">
+                    <label>API Endpoint:</label>
+                    <div>
+                        <input type="radio" id="base64Api" name="apiEndpoint" value="base64" checked>
+                        <label for="base64Api">Base64 API</label>
+                    </div>
+                    <div>
+                        <input type="radio" id="uploadApi" name="apiEndpoint" value="upload">
+                        <label for="uploadApi">Upload API</label>
+                    </div>
+                </div>
+                
+                <button id="searchBtn" class="btn" onclick="searchImage()" disabled>Search Similar Products</button>
+            </div>
+            
+            <!-- Camera Tab -->
+            <div id="cameraTab" class="tabcontent">
+                <div class="camera-container">
+                    <video id="cameraFeed" autoplay></video>
+                    <button id="captureBtn" class="btn" onclick="captureImage()">Capture Image</button>
+                    <button id="startCameraBtn" class="btn" onclick="startCamera()">Start Camera</button>
+                </div>
+                
+                <div class="preview" id="capturePreview" style="display: none;">
+                    <canvas id="captureCanvas"></canvas>
+                </div>
+                
+                <div class="form-group">
+                    <label for="cameraLimitInput">Number of results:</label>
+                    <input type="number" id="cameraLimitInput" value="10" min="1" max="50">
+                </div>
+                
+                <button id="searchCaptureBtn" class="btn" onclick="searchCapturedImage()" disabled>Search Similar Products</button>
+            </div>
+            
+            <!-- URL Tab -->
+            <div id="urlTab" class="tabcontent">
+                <div class="form-group">
+                    <label for="imageUrl">Image URL:</label>
+                    <input type="text" id="imageUrl" placeholder="https://example.com/image.jpg" style="width: 100%; padding: 8px;">
+                </div>
+                
+                <div class="preview" id="urlPreview">
+                    <span>Enter an image URL above</span>
+                </div>
+                
+                <div class="form-group">
+                    <label for="urlLimitInput">Number of results:</label>
+                    <input type="number" id="urlLimitInput" value="10" min="1" max="50">
+                </div>
+                
+                <button id="previewUrlBtn" class="btn" onclick="previewImageUrl()">Preview</button>
+                <button id="searchUrlBtn" class="btn" onclick="searchImageUrl()" disabled>Search Similar Products</button>
+            </div>
+            
+            <div class="error" id="errorMessage"></div>
+            
+            <div class="loading" id="loadingIndicator">
+                <div class="spinner"></div>
+                <p>Searching for similar products...</p>
+            </div>
+        </div>
+        
+        <div class="panel">
+            <h2>Search Results</h2>
+            <div id="searchStats"></div>
+            <div class="results" id="searchResults">
+                <p>Search results will appear here</p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Global variables
+        let selectedFile = null;
+        let capturedImage = null;
+        let imageUrl = null;
+        
+        // API endpoints
+        const API_BASE_URL = 'http://localhost:4000/api';  // Change this to your API server
+        
+        // Tab functionality
+        function openTab(evt, tabName) {
+            // Declare variables
+            let i, tabcontent, tablinks;
+            
+            // Get all elements with class="tabcontent" and hide them
+            tabcontent = document.getElementsByClassName("tabcontent");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+            }
+            
+            // Get all elements with class="tablinks" and remove the class "active"
+            tablinks = document.getElementsByClassName("tablinks");
+            for (i = 0; i < tablinks.length; i++) {
+                tablinks[i].className = tablinks[i].className.replace(" active", "");
+            }
+            
+            // Show the current tab, and add an "active" class to the button that opened the tab
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.className += " active";
+        }
+        
+        // File upload handling
+        function handleFileSelect(event) {
+            selectedFile = event.target.files[0];
+            if (selectedFile) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const preview = document.getElementById('imagePreview');
+                    preview.innerHTML = '';
+                    const img = document.createElement('img');
+                    img.src = e.target.result;
+                    preview.appendChild(img);
+                    document.getElementById('searchBtn').disabled = false;
+                };
+                reader.readAsDataURL(selectedFile);
+            }
+        }
+        
+        // Image search function
+        async function searchImage() {
+            if (!selectedFile) {
+                showError("Please select an image first");
+                return;
+            }
+            
+            const limit = document.getElementById('limitInput').value;
+            const apiType = document.querySelector('input[name="apiEndpoint"]:checked').value;
+            
+            // Show loading indicator
+            document.getElementById('loadingIndicator').style.display = 'block';
+            document.getElementById('errorMessage').style.display = 'none';
+            
+            try {
+                let response;
+                
+                if (apiType === 'base64') {
+                    // Base64 API
+                    const base64Image = await fileToBase64(selectedFile);
+                    const formData = new FormData();
+                    formData.append('base64_image', base64Image);
+                    formData.append('limit', limit);
+                    
+                    response = await fetch(`${API_BASE_URL}/search/base64`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                } else {
+                    // Upload API
+                    const formData = new FormData();
+                    formData.append('file', selectedFile);
+                    formData.append('limit', limit);
+                    
+                    response = await fetch(`${API_BASE_URL}/search/upload`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                }
+                
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                displayResults(data);
+            } catch (error) {
+                showError(`Error searching image: ${error.message}`);
+            } finally {
+                document.getElementById('loadingIndicator').style.display = 'none';
+            }
+        }
+        
+        // Camera handling
+        let videoStream = null;
+        
+        async function startCamera() {
+            try {
+                const video = document.getElementById('cameraFeed');
+                const constraints = {
+                    video: {
+                        facingMode: 'environment', // Use back camera if available
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                };
+                
+                videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = videoStream;
+                document.getElementById('captureBtn').disabled = false;
+            } catch (error) {
+                showError(`Error accessing camera: ${error.message}`);
+            }
+        }
+        
+        function stopCamera() {
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+                document.getElementById('cameraFeed').srcObject = null;
+                document.getElementById('captureBtn').disabled = true;
+            }
+        }
+        
+        function captureImage() {
+            const video = document.getElementById('cameraFeed');
+            const canvas = document.getElementById('captureCanvas');
+            const preview = document.getElementById('capturePreview');
+            
+            // Set canvas dimensions to match video
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            // Draw video frame to canvas
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Show the preview
+            preview.style.display = 'block';
+            
+            // Store the captured image
+            canvas.toBlob(blob => {
+                capturedImage = blob;
+                document.getElementById('searchCaptureBtn').disabled = false;
+            }, 'image/jpeg', 0.95);
+        }
+        
+        async function searchCapturedImage() {
+            if (!capturedImage) {
+                showError("Please capture an image first");
+                return;
+            }
+            
+            const limit = document.getElementById('cameraLimitInput').value;
+            
+            // Show loading indicator
+            document.getElementById('loadingIndicator').style.display = 'block';
+            document.getElementById('errorMessage').style.display = 'none';
+            
+            try {
+                // Convert captured image to base64
+                const base64Image = await fileToBase64(capturedImage);
+                const formData = new FormData();
+                formData.append('base64_image', base64Image);
+                formData.append('limit', limit);
+                
+                const response = await fetch(`${API_BASE_URL}/search/base64`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                displayResults(data);
+            } catch (error) {
+                showError(`Error searching image: ${error.message}`);
+            } finally {
+                document.getElementById('loadingIndicator').style.display = 'none';
+            }
+        }
+        
+        // URL handling
+        function previewImageUrl() {
+            const urlInput = document.getElementById('imageUrl');
+            imageUrl = urlInput.value.trim();
+            
+            if (!imageUrl) {
+                showError("Please enter an image URL");
+                return;
+            }
+            
+            const preview = document.getElementById('urlPreview');
+            preview.innerHTML = '';
+            const img = document.createElement('img');
+            img.src = imageUrl;
+            img.onerror = function() {
+                showError("Failed to load image from URL");
+                preview.innerHTML = '<span>Invalid image URL</span>';
+                document.getElementById('searchUrlBtn').disabled = true;
+            };
+            img.onload = function() {
+                document.getElementById('searchUrlBtn').disabled = false;
+            };
+            preview.appendChild(img);
+        }
+        
+        async function searchImageUrl() {
+            if (!imageUrl) {
+                showError("Please enter and preview an image URL first");
+                return;
+            }
+            
+            const limit = document.getElementById('urlLimitInput').value;
+            
+            // Show loading indicator
+            document.getElementById('loadingIndicator').style.display = 'block';
+            document.getElementById('errorMessage').style.display = 'none';
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/search?image_url=${encodeURIComponent(imageUrl)}&limit=${limit}`, {
+                    method: 'GET'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                displayResults(data);
+            } catch (error) {
+                showError(`Error searching image: ${error.message}`);
+            } finally {
+                document.getElementById('loadingIndicator').style.display = 'none';
+            }
+        }
+        
+        // Helper functions
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+            });
+        }
+        
+        function showError(message) {
+            const errorElement = document.getElementById('errorMessage');
+            errorElement.textContent = message;
+            errorElement.style.display = 'block';
+        }
+        
+        function displayResults(data) {
+            const resultsContainer = document.getElementById('searchResults');
+            const statsContainer = document.getElementById('searchStats');
+            
+            // Display stats
+            statsContainer.innerHTML = `
+                <p>Query time: ${data.query_time_ms.toFixed(2)} ms</p>
+                <p>Found ${data.results.length} similar products</p>
+            `;
+            
+            // Clear existing results
+            resultsContainer.innerHTML = '';
+            
+            if (data.results.length === 0) {
+                resultsContainer.innerHTML = '<p>No similar products found</p>';
+                return;
+            }
+            
+            // Display results
+            data.results.forEach((result, index) => {
+                const resultItem = document.createElement('div');
+                resultItem.className = 'result-item';
+                
+                resultItem.innerHTML = `
+                    <div class="result-info">
+                        <p><strong>Product ID:</strong> ${result.product_id}</p>
+                        <p><strong>Image ID:</strong> ${result.image_id}</p>
+                        <p><strong>Category:</strong> ${result.category_id || 'N/A'}</p>
+                        <p><strong>Subcategory:</strong> ${result.subcategory_id || 'N/A'}</p>
+                        <p class="score"><strong>Similarity:</strong> ${(result.similarity * 100).toFixed(2)}%</p>
+                    </div>
+                `;
+                
+                resultsContainer.appendChild(resultItem);
+            });
+        }
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            // Set up drag and drop
+            const dropArea = document.getElementById('imagePreview');
+            
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, preventDefaults, false);
+            });
+            
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropArea.addEventListener(eventName, highlight, false);
+            });
+            
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, unhighlight, false);
+            });
+            
+            function highlight() {
+                dropArea.classList.add('dragover');
+            }
+            
+            function unhighlight() {
+                dropArea.classList.remove('dragover');
+            }
+            
+            dropArea.addEventListener('drop', handleDrop, false);
+            
+            function handleDrop(e) {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                
+                if (files.length && files[0].type.match('image.*')) {
+                    selectedFile = files[0];
+                    const reader = new FileReader();
+                    reader.onload = function(event) {
+                        dropArea.innerHTML = '';
+                        const img = document.createElement('img');
+                        img.src = event.target.result;
+                        dropArea.appendChild(img);
+                        document.getElementById('searchBtn').disabled = false;
+                    };
+                    reader.readAsDataURL(selectedFile);
+                }
+            }
+            
+            // Image URL input handler
+            document.getElementById('imageUrl').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    previewImageUrl();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
