@@ -1,6 +1,6 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
-from typing import List, Optional,  Any
+from typing import List, Optional, Dict, Any
 import os
 import uvicorn
 from src.Image_db import ImageDatabase
@@ -24,7 +24,51 @@ class ProductUpdate(BaseModel):
     class Config:
         populate_by_name = True
         allow_population_by_field_name = True
+import asyncio
 
+# Define Pydantic models for batch insert
+class BatchProductInsert(BaseModel):
+    products: List[ProductUpdate]
+    
+    class Config:
+        populate_by_name = True
+        schema_extra = {
+            "example": {
+                "products": [
+                    {
+                        "_id": "product123",
+                        "category": "clothing",
+                        "subCategory": "shirts",
+                        "images": [
+                            {
+                                "_id": "image1",
+                                "url": "https://example.com/image1.jpg",
+                                "blurDataURL": "https://example.com/image1.jpg"
+                            }
+                        ]
+                    },
+                    {
+                        "_id": "product456",
+                        "category": "accessories",
+                        "subCategory": "watches",
+                        "images": [
+                            {
+                                "_id": "image2",
+                                "url": "https://example.com/image2.jpg",
+                                "blurDataURL": "https://example.com/image1.jpg"
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+
+# Response model for batch operations
+class BatchInsertResponse(BaseModel):
+    total_products: int
+    successful_products: int
+    failed_products: List[Dict[str, Any]]
+    total_images_added: int
 
 class ImageUpdate(BaseModel):
     images: List[Image]
@@ -166,7 +210,6 @@ async def search_by_image(image_url: str, limit: int = 10):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
-
 # API to get product information
 @app.get("/api/product/{product_id}")
 async def get_product(product_id: str):
@@ -207,7 +250,95 @@ async def get_product(product_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get product: {str(e)}")
 
+async def process_product(image_db, product):
+    """Process a single product for batch insertion"""
+    try:
+        product_id = str(product.product_id)
+        category_id = str(product.category) if product.category else None
+        subcategory_id = str(product.subCategory) if product.subCategory else None
+        
+        success, num_added, failed = image_db.insert_product(
+            product_id=product_id,
+            images=product.images,
+            category_id=category_id,
+            subcategory_id=subcategory_id
+        )
+        
+        return {
+            "product_id": product_id,
+            "success": success,
+            "images_added": num_added,
+            "failed_images": failed
+        }
+    except Exception as e:
+        return {
+            "product_id": str(product.product_id),
+            "success": False,
+            "error": str(e),
+            "images_added": 0
+        }
 
+@app.post("/api/batch-insert-products", response_model=BatchInsertResponse)
+async def batch_insert_products(data: BatchProductInsert, background_tasks: BackgroundTasks):
+    """Insert multiple products into the visual search database in a single API call"""
+    try:
+        products = data.products
+        
+        if not products:
+            return {
+                "total_products": 0,
+                "successful_products": 0,
+                "failed_products": [],
+                "total_images_added": 0
+            }
+        
+        print(f"Batch inserting {len(products)} products")
+        
+        # Process each product concurrently
+        tasks = [process_product(image_db, product) for product in products]
+        results = await asyncio.gather(*tasks)
+        
+        # Collect statistics
+        successful_products = [r for r in results if r["success"]]
+        failed_products = [r for r in results if not r["success"]]
+        total_images_added = sum(r["images_added"] for r in results)
+        
+        return {
+            "total_products": len(products),
+            "successful_products": len(successful_products),
+            "failed_products": failed_products,
+            "total_images_added": total_images_added
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Batch insert failed: {str(e)}")
+# Add this endpoint to your api_server.py file
+
+@app.delete("/api/delete-all")
+async def delete_all_vectors():
+    """Delete all records from the vector database"""
+    try:
+        print("Deleting all records from vector database...")
+        
+        # Get all IDs in the collection
+        all_items = image_db.collection.get()
+        ids = all_items.get('ids', [])
+        
+        if not ids:
+            return {"message": "Database is already empty", "deleted_count": 0}
+        
+        # Delete all records from ChromaDB
+        image_db.collection.delete(ids=ids)
+        
+        # Clear the product map
+        image_db.product_map = {}
+        
+        return {
+            "message": "All records deleted from vector database",
+            "deleted_count": len(ids)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete all records: {str(e)}")
+    
 # API to get database stats
 @app.get("/api/stats")
 async def get_stats():

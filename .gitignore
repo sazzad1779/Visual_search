@@ -8,6 +8,7 @@ __pycache__/
 
 # chromadb
 chroma_db/
+image_db/
 
 
 # Distribution / packaging

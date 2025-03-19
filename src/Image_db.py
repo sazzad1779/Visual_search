@@ -464,7 +464,129 @@ class ImageDatabase:
         except Exception as e:
             print(f"Error getting images for product {product_id}: {e}")
             return []
-    
+    def batch_insert_products(self, products_data: List[Dict[str, Any]]):
+        """
+        Insert multiple products in batch mode for better efficiency
+        
+        Args:
+            products_data: List of product dictionaries with product_id, images, category_id, subcategory_id
+            
+        Returns:
+            List of results for each product
+        """
+        results = []
+        
+        # Collect all image IDs across all products for a single lookup
+        all_image_ids = []
+        image_product_map = {}  # Maps image_id to product_id
+        
+        # First pass: collect all image IDs
+        for product in products_data:
+            product_id = product.get('product_id')
+            images = product.get('images', [])
+            
+            for image in images:
+                image_id = image.get('image_id')
+                if image_id:
+                    all_image_ids.append(image_id)
+                    image_product_map[image_id] = product_id
+        
+        # Query ChromaDB only once for all image IDs
+        existing_ids = set()
+        if all_image_ids:
+            try:
+                existing_results = self.collection.get(
+                    ids=all_image_ids,
+                    include=["metadatas"]
+                )
+                existing_ids = set(existing_results.get('ids', []))
+                print(f"Found {len(existing_ids)} already existing images out of {len(all_image_ids)} in batch")
+            except Exception as e:
+                print(f"Error checking existing images: {e}")
+        
+        # Second pass: process each product
+        for product in products_data:
+            product_id = product.get('product_id')
+            category_id = product.get('category_id')
+            subcategory_id = product.get('subcategory_id')
+            images = product.get('images', [])
+            
+            # Process this product
+            success, num_added, failed = self._process_product_batch(
+                product_id, 
+                images, 
+                category_id, 
+                subcategory_id, 
+                existing_ids
+            )
+            
+            results.append({
+                'product_id': product_id,
+                'success': success,
+                'images_added': num_added,
+                'failed_images': failed
+            })
+        
+        return results
+
+    def _process_product_batch(self, product_id, images, category_id, subcategory_id, existing_ids):
+        """Helper method to process a single product during batch insert"""
+        num_added = 0
+        failed_images = []
+        
+        for image in images:
+            # Extract image info
+            image_id = image.get('image_id')
+            image_url = image.get('url')
+            
+            if not image_id or not image_url:
+                continue
+            
+            # Skip if already in database
+            if image_id in existing_ids:
+                # Make sure the product map is updated
+                if product_id not in self.product_map:
+                    self.product_map[product_id] = []
+                if image_id not in self.product_map[product_id]:
+                    self.product_map[product_id].append(image_id)
+                continue
+            
+            try:
+                # Extract features
+                features = self.feature_extractor.extract_from_url(image_url)
+                if features is None:
+                    failed_images.append(image_id)
+                    continue
+                
+                # Prepare metadata
+                metadata = {
+                    'product_id': product_id,
+                    'image_id': image_id,
+                    'category_id': category_id if category_id else '',
+                    'subcategory_id': subcategory_id if subcategory_id else '',
+                    'image_url': image_url
+                }
+                
+                # Add to ChromaDB
+                self.collection.upsert(
+                    ids=[image_id],
+                    embeddings=[features.tolist()],
+                    metadatas=[metadata]
+                )
+                
+                # Update mappings
+                if product_id not in self.product_map:
+                    self.product_map[product_id] = []
+                if image_id not in self.product_map[product_id]:
+                    self.product_map[product_id].append(image_id)
+                
+                num_added += 1
+                
+            except Exception as e:
+                print(f"Error processing image {image_id}: {e}")
+                failed_images.append(image_id)
+        
+        return (num_added > 0, num_added, failed_images)
     def get_stats(self):
         """
         Get statistics about the database
