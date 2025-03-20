@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Visual Search</title>
+</head>
+<body>
+    <h2>Upload an Image to Search</h2>
+    <form action="/search/" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" accept="image/*" required>
+        <button type="submit">Search</button>
+    </form>
+
+    {% if query_image %}
+        <h3>Query Image</h3>
+        <img src="{{ query_image }}" alt="Query Image" style="width:200px;height:auto;margin:10px;">
+        <h3>Similar Images</h3>
+    {% endif %}
+
+    {% if results %}
+        
+        {% for image in results %}
+            <img src="{{ image }}" alt="Similar Image" style="width:200px;height:auto;margin:10px;">
+
+        {% endfor %}
+    {% endif %}
+</body>
+</html>

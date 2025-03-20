@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Search Results</title>
+</head>
+<body>
+    <h2>Similar Images</h2>
+    {% for image in results %}
+        <img src="{{ image }}" alt="Similar Image" style="width:200px;height:auto;margin:10px;">
+    {% endfor %}
+    <br>
+    <a href="/">Search Again</a>
+</body>
+</html>
