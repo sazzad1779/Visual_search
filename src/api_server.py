@@ -4,14 +4,10 @@ from fastapi.middleware.cors import CORSMiddleware  # Add this import
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import os
-import uvicorn
 from src.Image_db import ImageDatabase
 import base64
-import io
-# from PIL import Image
 import time
-
-
+import asyncio
 # Define Pydantic models for request validation
 class Image(BaseModel):
     url: str
@@ -31,7 +27,6 @@ class ProductUpdate(BaseModel):
     class Config:
         populate_by_name = True
         allow_population_by_field_name = True
-import asyncio
 
 # Define Pydantic models for batch insert
 class BatchProductInsert(BaseModel):
@@ -202,34 +197,66 @@ async def update_images(product_id: str, data: ImageUpdate):
 
 
 # 1. Search with Base64 image data (fastest for real-time)
+# @app.post("/api/search/base64")
+# async def search_by_base64_image(base64_image: str = Form(...), limit: int = Form(10)):
+#     """Search for similar products using base64 encoded image data"""
+#     try:
+#         start_time = time.time()
+        
+#         # Decode base64 image
+#         try:
+#             # Remove the data URL prefix if present
+#             if "base64," in base64_image:
+#                 base64_image = base64_image.split("base64,")[1]
+                
+#             image_data = base64.b64decode(base64_image)
+            
+#             # Query using the image bytes
+#             results = image_db.query_image_from_bytes(image_data, k=limit)
+            
+#         except Exception as e:
+#             raise HTTPException(status_code=400, detail=f"Invalid image data: {str(e)}")
+        
+#         query_time_ms = (time.time() - start_time) * 1000
+        
+#         if not results:
+#             return {"results": [], "query_time_ms": query_time_ms}
+        
+#         return {"results": results, "query_time_ms": query_time_ms}
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
 @app.post("/api/search/base64")
 async def search_by_base64_image(base64_image: str = Form(...), limit: int = Form(10)):
-    """Search for similar products using base64 encoded image data"""
+    import time
+    total_start = time.time()
     try:
-        start_time = time.time()
-        
-        # Decode base64 image
-        try:
-            # Remove the data URL prefix if present
-            if "base64," in base64_image:
-                base64_image = base64_image.split("base64,")[1]
-                
-            image_data = base64.b64decode(base64_image)
-            
-            # Query using the image bytes
-            results = image_db.query_image_from_bytes(image_data, k=limit)
-            
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Invalid image data: {str(e)}")
-        
-        query_time_ms = (time.time() - start_time) * 1000
-        
-        if not results:
-            return {"results": [], "query_time_ms": query_time_ms}
-        
-        return {"results": results, "query_time_ms": query_time_ms}
+        decode_start = time.time()
+        if "base64," in base64_image:
+            base64_image = base64_image.split("base64,")[1]
+        image_data = base64.b64decode(base64_image)
+        decode_time = time.time() - decode_start
+
+        extract_start = time.time()
+        features = image_db.feature_extractor.extract_from_bytes(image_data)
+        extract_time = time.time() - extract_start
+
+        chroma_start = time.time()
+        results = image_db.collection.query(
+            query_embeddings=[features.tolist()],
+            n_results=limit
+        )
+        chroma_time = time.time() - chroma_start
+
+        total_time = time.time() - total_start
+
+        print(f"[TIMING] decode: {decode_time:.2f}s | extract: {extract_time:.2f}s | chroma: {chroma_time:.2f}s | total: {total_time:.2f}s")
+
+        # Format response as usual...
+        return {"results": results, "query_time_ms": total_time * 1000}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
 
 
 # 2. Search with direct file upload
@@ -258,7 +285,6 @@ async def search_by_uploaded_image(file: UploadFile = File(...), limit: int = Fo
 async def search_by_image(image_url: str, limit: int = 10):
     """Search for similar products by image URL"""
     import time
-    
     try:
         start_time = time.time()
         
@@ -415,15 +441,3 @@ async def get_stats():
         return stats
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")
-
-
-
-if __name__ == "__main__":
-    # Run the server
-    PORT = int(os.environ.get("PORT", 4000))
-    HOST = os.environ.get("HOST", "0.0.0.0")
-    
-    print(f"Starting visual search API server on {HOST}:{PORT}")
-    print(f"Using model: {MODEL_NAME}")
-    
-    uvicorn.run(app, host=HOST, port=PORT)

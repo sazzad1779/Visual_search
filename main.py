@@ -1,22 +1,25 @@
 import os
 from dotenv import load_dotenv
-import uvicorn
 from src.api_server import app
 
-# Load environment variables from .env file if it exists
-load_dotenv()
+# Load .env variables
+load_dotenv(override=True)
 
+# Set default host/port
+PORT = int(os.environ.get("PORT", 4000))
+HOST = os.environ.get("HOST", "0.0.0.0")
+
+# This is only used when running via `python main.py`
 if __name__ == "__main__":
-    # Run the server with reload enabled
-    PORT = int(os.environ.get("PORT", 4000))
-    HOST = os.environ.get("HOST", "0.0.0.0")
-    print(f"Starting visual search API server on {HOST}:{PORT}")
-    print(f"Reload is enabled - changes to code will automatically restart the server")
-    
-    # Enable reload for development
+    import uvicorn
+    print(f"🚀 Running development server on http://{HOST}:{PORT}")
     uvicorn.run(
-        "src.api_server:app",  # Use string reference for reload to work
-        host=HOST, 
+        "src.api_server:app",  # as string for reload
+        host=HOST,
         port=PORT,
-        reload=True           # This enables auto-reload on code changes
+        reload=True
     )
+
+# 👇 IMPORTANT: `app` must be visible at module level
+# So Gunicorn can import like: gunicorn -k uvicorn.workers.UvicornWorker main:app
+__all__ = ["app"]
